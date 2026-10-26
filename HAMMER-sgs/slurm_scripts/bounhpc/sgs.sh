@@ -5,7 +5,6 @@
 #SBATCH --error=logs/hammer-sgs-%j.err
 
 #SBATCH --container-image ghcr.io\#kutayeroglu/hammer-sgs
-#SBATCH --container-mounts /stratch/dataset:/datasets
 #SBATCH --gpus=1
 #SBATCH --cpus-per-gpu=8
 #SBATCH --mem-per-gpu=16G
@@ -44,7 +43,8 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_GPU
 # Keep HF model downloads on persistent storage so later jobs reuse them
 export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
 
-DATA_ROOT="${DATA_ROOT:-/datasets/DGM4plus}"
+# Home is visible inside the container, so the dataset is read from there directly
+DATA_ROOT="${DATA_ROOT:-$HOME/datasets/dgm4plus}"
 CROPS_DIR="${CROPS_DIR:-crops}"
 OUT_CSV="${OUT_CSV:-results/semantic_blip_${SLURM_JOB_ID}.csv}"
 
