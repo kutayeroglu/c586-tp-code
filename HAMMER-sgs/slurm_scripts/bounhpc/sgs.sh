@@ -19,14 +19,16 @@
 #   sbatch slurm_scripts/bounhpc/sgs.sh                        # both stages
 #   STAGE=crops    sbatch slurm_scripts/bounhpc/sgs.sh         # YOLOv8-seg crops only (uses the GPU)
 #   STAGE=semantic sbatch slurm_scripts/bounhpc/sgs.sh         # BLIP + MiniLM only (CPU-only)
+#   SPLIT=train    sbatch slurm_scripts/bounhpc/sgs.sh         # train | val (default) | test
 #   SEMANTIC_ARGS="--max_images 200" sbatch slurm_scripts/bounhpc/sgs.sh   # quick smoke test
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 STAGE="${STAGE:-all}"   # crops | semantic | all
+SPLIT="${SPLIT:-val}"   # train (3500) | val (750) | test (750)
 
-echo "--- Starting Job: $SLURM_JOB_ID (stage: $STAGE) ---"
+echo "--- Starting Job: $SLURM_JOB_ID (stage: $STAGE, split: $SPLIT) ---"
 echo "Running on host: $(hostname)"
 echo "Allocated GPUs: $SLURM_GPUS_ON_NODE"
 echo ""
@@ -47,10 +49,18 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_GPU
 # Keep HF model downloads on persistent storage so later jobs reuse them
 export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
 
-# Home is visible inside the container, so the dataset is read from there directly
+# Home is visible inside the container, so the dataset is read from there directly.
+# Layout: <split>/<split>.json (test: test_public.json) with bare file names under <split>/images/
 DATA_ROOT="${DATA_ROOT:-$HOME/datasets/dgm4plus}"
-CROPS_DIR="${CROPS_DIR:-crops}"
-OUT_CSV="${OUT_CSV:-results/semantic_blip_${SLURM_JOB_ID}.csv}"
+case "$SPLIT" in
+    train|val) DATA_JSON="$DATA_ROOT/$SPLIT/$SPLIT.json" ;;
+    test)      DATA_JSON="$DATA_ROOT/test/test_public.json" ;;
+    *) echo "ERROR: unknown SPLIT '$SPLIT' (expected train, val or test)" >&2; exit 1 ;;
+esac
+IMG_ROOT="$DATA_ROOT/$SPLIT/images"
+# One crops dir per split: crops are named by id, so splits must not share a folder
+CROPS_DIR="${CROPS_DIR:-crops/$SPLIT}"
+OUT_CSV="${OUT_CSV:-results/semantic_blip_${SPLIT}_${SLURM_JOB_ID}.csv}"
 
 python3 -c "import torch; print(f'torch {torch.__version__}, cuda available: {torch.cuda.is_available()}')"
 echo ""
@@ -68,8 +78,8 @@ if [ "$STAGE" = "crops" ] || [ "$STAGE" = "all" ]; then
     echo "--- Stage 1: FG/BG crops (YOLOv8-seg) ---"
     # Existing crops are skipped unless --overwrite is passed, so a timed-out job can be resubmitted
     CROPS_CMD=(
-        --data "$DATA_ROOT/metadata.json"
-        --img_root "$DATA_ROOT"
+        --data "$DATA_JSON"
+        --img_root "$IMG_ROOT"
         --out_dir "$CROPS_DIR"
         --model yolov8s-seg.pt
         --imgsz 896
