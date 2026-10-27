@@ -8,7 +8,13 @@ def resolve_image_path(ipath: str, img_root: str) -> str:
     p = Path(ipath)
     if p.is_absolute():
         return str(p)
-    return str((Path(img_root) / p).resolve())
+    full = Path(img_root) / p
+    # Flattened datasets (e.g. our DGM4plus copy) keep every image directly under img_root,
+    # while the JSON still says data/manipulation/<type>/<name>.jpg
+    flat = Path(img_root) / p.name
+    if not full.exists() and flat.exists():
+        return str(flat.resolve())
+    return str(full.resolve())
 
 def center_fallback(im):
     h, w = im.shape[:2]
@@ -84,14 +90,18 @@ def main():
         data = json.load(f)
 
     ok = missed = skipped = 0
+    seen = {}  # resolved path -> JSON path, to catch file-name collisions from the flattened fallback
     for row in tqdm(data):
         iid = row.get("id"); rel = row.get("image", "")
         if iid is None or not rel:
             missed += 1; continue
-        ipath = resolve_image_path(rel.replace("\\","/"), args.img_root)
+        rel = rel.replace("\\","/")
+        ipath = resolve_image_path(rel, args.img_root)
         if not os.path.exists(ipath):
             print(f"[warn] missing image for id={iid}: {ipath}")
             missed += 1; continue
+        if seen.setdefault(ipath, rel) != rel:
+            print(f"[warn] id={iid}: '{rel}' and '{seen[ipath]}' both resolve to {ipath}")
 
         if args.check:
             ok += 1; continue
