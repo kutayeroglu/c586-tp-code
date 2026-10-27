@@ -24,4 +24,9 @@ RUN pip install -r requirements.txt
 
 COPY scripts/ scripts/
 
+# enroot/pyxis (and the NVIDIA container toolkit) only mount the host GPU driver,
+# nvidia-smi included, when the image sets these; python:3.11-slim doesn't.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
 CMD ["bash"]
