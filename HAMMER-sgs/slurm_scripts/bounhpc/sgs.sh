@@ -4,7 +4,11 @@
 #SBATCH --output=logs/hammer-sgs-%j.out
 #SBATCH --error=logs/hammer-sgs-%j.err
 
-#SBATCH --container-image ghcr.io\#kutayeroglu/hammer-sgs
+# Local squashfs instead of ghcr.io#kutayeroglu/hammer-sgs: pulling the ~3.7 GB torch layer
+# from ghcr keeps dropping on our network. Create it once from the local docker image with
+#   enroot import -o hammer-sgs.sqsh dockerd://hammer-sgs
+# and copy it here (#SBATCH lines can't expand ~ or $HOME, so the path is absolute).
+#SBATCH --container-image /users/kutay.eroglu/containers/hammer-sgs.sqsh
 #SBATCH --gpus=1
 #SBATCH --cpus-per-gpu=8
 #SBATCH --mem-per-gpu=16G
