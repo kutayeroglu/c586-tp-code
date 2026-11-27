@@ -15,7 +15,11 @@
 # Settings are passed as environment variables:
 #   STAGE=crops    bash .../sgs.sh         # YOLOv8-seg crops only (uses the GPU)
 #   STAGE=semantic bash .../sgs.sh         # BLIP + MiniLM only (CPU-only), needs the crops of that split
-#   SPLIT=train    bash .../sgs.sh         # train (3500) | val (750, default) | test (750)
+#   SPLIT=train    bash .../sgs.sh         # train (3500) | val (750, default) | test (750) | all (5000)
+#   SPLIT=all      bash .../sgs.sh --qos=acc_ehpc   # the paper's setup: whole DGM4plus in one run
+# SPLIT=all matches the SGS paper's "Extended DGM4" evaluation (N=4632): the three splits are merged
+# (train, val, test order) into one JSON and one crops folder. Crops are named by id, and 368 ids are
+# shared by two images, so the second image of each is skipped as upstream does: 5000 - 368 = 4632.
 #   SEMANTIC_ARGS="--max_images 200" bash .../sgs.sh   # quick smoke test
 #   CROPS_ARGS="--overwrite" bash .../sgs.sh           # extra options for make_fg_bg_crops_yolo.py
 # Crops:   /gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/ (kept across jobs)
@@ -41,7 +45,7 @@ if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/scripts/make_fg_bg_crops_yolo.py" ]; th
 fi
 
 STAGE="${STAGE:-all}"   # crops | semantic | all
-SPLIT="${SPLIT:-val}"   # train | val | test
+SPLIT="${SPLIT:-val}"   # train | val | test | all
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
@@ -57,24 +61,19 @@ RUN_DIR="$SCRATCH_BASE/$SLURM_JOB_ID"
 DATA_ROOT="$TMPDIR/dgm4plus"
 
 # Layout: <split>/<split>.json (test: test_public.json) with bare file names under <split>/images/
+SPLIT_JSONS=("$DATA_ROOT/train/train.json" "$DATA_ROOT/val/val.json" "$DATA_ROOT/test/test_public.json")
+IMG_ROOT="$DATA_ROOT/$SPLIT/images"
 case "$SPLIT" in
     train|val) DATA_JSON="$DATA_ROOT/$SPLIT/$SPLIT.json" ;;
     test)      DATA_JSON="$DATA_ROOT/test/test_public.json" ;;
-    *) echo "ERROR: unknown SPLIT '$SPLIT' (expected train, val or test)" >&2; exit 1 ;;
+    all)       DATA_JSON="$DATA_ROOT/all/all.json" ;;   # built below from SPLIT_JSONS, in that order
+    *) echo "ERROR: unknown SPLIT '$SPLIT' (expected train, val, test or all)" >&2; exit 1 ;;
 esac
-IMG_ROOT="$DATA_ROOT/$SPLIT/images"
 
 echo "--- Job $SLURM_JOB_ID on $(hostname), GPU(s): $CUDA_VISIBLE_DEVICES (stage: $STAGE, split: $SPLIT) ---"
 echo "Source: $SRC_DIR"
 echo "Run dir: $RUN_DIR"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader
-
-# -- Data: extract to local SSD (only needed for the crops stage) --
-if [ "$STAGE" = "crops" ] || [ "$STAGE" = "all" ]; then
-    mkdir -p "$DATA_ROOT"
-    tar -xf "$DATASET_TAR" -C "$DATA_ROOT"
-    echo "Extracted $(ls "$IMG_ROOT" | wc -l) images to $IMG_ROOT"
-fi
 
 # -- Run folder on scratch; only the code the job runs --
 mkdir -p "$RUN_DIR" "$CROPS_DIR"
@@ -92,6 +91,28 @@ run() {
 }
 
 run python -c "import torch; print(f'torch {torch.__version__}, cuda available: {torch.cuda.is_available()}')"
+
+# -- Data: extract to local SSD (only needed for the crops stage) --
+if [ "$STAGE" = "crops" ] || [ "$STAGE" = "all" ]; then
+    mkdir -p "$DATA_ROOT"
+    tar -xf "$DATASET_TAR" -C "$DATA_ROOT"
+    if [ "$SPLIT" = "all" ]; then
+        # One image folder (file names are unique across splits) and one JSON, like upstream's metadata.json
+        mkdir -p "$IMG_ROOT"
+        for s in train val test; do
+            find "$DATA_ROOT/$s/images" -type f -exec mv -n -t "$IMG_ROOT" {} +
+        done
+        run python -c '
+import json, sys
+out, recs = sys.argv[1], []
+for p in sys.argv[2:]:
+    recs += json.load(open(p))
+json.dump(recs, open(out, "w"))
+print(f"Merged {len(recs)} records from {len(sys.argv) - 2} JSON files into {out}")
+' "$DATA_JSON" "${SPLIT_JSONS[@]}"
+    fi
+    echo "Extracted $(ls "$IMG_ROOT" | wc -l) images to $IMG_ROOT"
+fi
 
 # Split an args string by spaces and append it to the named array
 append_args() {

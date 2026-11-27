@@ -102,8 +102,9 @@ It is submitted by running it (not with `sbatch`) from anywhere on a login node.
 ```bash
 bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh                  # debug run (acc_debug)
 bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh --qos=acc_ehpc   # full run
-STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT: train | val | test
+STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT: train | val | test | all
 ```
+`SPLIT=all` is the setup to use when comparing with the SGS paper. Its "Extended DGM4" set is DGM4plus, and its N=4632 is the number of distinct ids among the 5000 samples: crops are named by id, 368 ids are shared by two different images, and the upstream crops script skips the second one. So `SPLIT=all` merges train, val and test (in that order) into one JSON and one crops folder and should report `OK:4632 Skipped:368`. Per-split runs give 4794 pairs instead, because some shared ids fall in different splits. The ids come from a counter in DGM4plus's generator (`src/Datasetgen.py` in `Gaganx0/DGM4plus`) that restarts at the record count after a resumed run, so it can reuse ids. Which image of each pair is kept depends on record order, which may differ from the authors' original `metadata.json`.
 `--chdir` must exist before the job starts, so it can't be created inside the job.
 Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFFLINE=1`, reading models from project storage.
 
