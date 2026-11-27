@@ -9,14 +9,15 @@ Nodes don't have internet access.
 The project code is `etur166` (use it for `--account` and for `/gpfs/projects/...` and `/gpfs/scratch/...` paths).
 
 ## Paths
-TODO: where this project's datasets are stored on MN5 (e.g. DGM4plus under `/gpfs/projects/etur166/boga222803/datasets/`), their layout and label format.
+The DGM4plus dataset is stored as one tar file at `/gpfs/projects/etur166/boga222803/datasets/dgm4plus.tar` (train 3500, val 750, test 750 images; see "Large files" below).
 
 Datasets must always be extracted to `$TMPDIR` inside the job, never next to the source code:
 ```bash
-unzip -q /gpfs/projects/etur166/boga222803/datasets/<dataset>.zip -d "$TMPDIR/<dataset>"
+mkdir -p "$TMPDIR/dgm4plus"
+tar -xf /gpfs/projects/etur166/boga222803/datasets/dgm4plus.tar -C "$TMPDIR/dgm4plus"
 ```
 
-TODO: confirm the clone path on MN5 (suggested: `/gpfs/home/boga/boga222803/c586-tp-code`, which would put this project at `.../c586-tp-code/HAMMER-sgs`).
+The repo is cloned at `/gpfs/home/boga/boga222803/c586-tp-code`, so this project is at `/gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs`.
 This is storage only: never execute jobs there or use it as a job's working directory (see "Where jobs run").
 
 ### Getting the source code onto MN5
@@ -28,13 +29,26 @@ git clone git@github.com:kutayeroglu/c586-tp-code.git ~/mn5_mount/home/c586-tp-c
 git -C ~/mn5_mount/home/c586-tp-code pull                                               # later updates
 fusermount -u ~/mn5_mount/home                                                          # unmount when done
 ```
-Only the source goes through git; large files are uploaded separately (TODO: script for uploading weights/models).
+Only the source goes through git; large files are uploaded separately with `rsync -a --partial` through `mn5_data_transfer1` (see "Large files" below).
 Server rules require all large files (weights, images, datasets) to stay in `/gpfs/projects/etur166/boga222803`, never in the source code directory.
 
 Large files in `/gpfs/projects/etur166/boga222803`:
 ```
-TODO: list this project's container image, model weights and datasets
+├── hammer-sgs.sif              # Apptainer image (see "Running the container")
+├── datasets/dgm4plus.tar       # DGM4plus: train/ val/ test/, each <split>.json (test: test_public.json) + images/
+├── models/yolov8s-seg.pt       # YOLOv8-seg weights for the crops stage
+├── hf_cache/hub/               # HF cache (HF_HOME): Salesforce/blip-image-captioning-base, sentence-transformers/all-MiniLM-L6-v2
+└── hammer-sgs/                 # job outputs: crops/<split>/, results/<jobid>/
 ```
+They were staged locally and uploaded through the transfer node:
+```bash
+tar -cf dgm4plus.tar -C ~/datasets/dgm4_plus train val test   # one file instead of ~5000 on GPFS
+mkdir -p hf_cache/hub && cp -a ~/.cache/huggingface/hub/models--Salesforce--blip-image-captioning-base \
+    ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2 hf_cache/hub/   # relative symlinks survive
+# yolov8s-seg.pt: downloaded with ultralytics' attempt_download_asset('yolov8s-seg.pt') inside the image
+rsync -a --partial <file or folder> mn5_data_transfer1:/gpfs/projects/etur166/boga222803/<target>/
+```
+Keep datasets as a single archive on GPFS (many small files are slow there) and extract them to `$TMPDIR` in the job.
 
 ## Where jobs run
 The server maintainers recommend: "Executing your jobs in your group's /gpfs/projects or /gpfs/scratch directories is recommended."
@@ -43,15 +57,16 @@ So jobs run in `/gpfs/scratch/etur166/boga222803/`, never in `/gpfs/home`: both 
 
 Each job copies only the code it needs from home into its own run folder on scratch and runs there:
 ```bash
-RUN_DIR=/gpfs/scratch/etur166/boga222803/<project>/$SLURM_JOB_ID   # TODO: pick the project folder name
+RUN_DIR=/gpfs/scratch/etur166/boga222803/hammer-sgs/$SLURM_JOB_ID
 mkdir -p "$RUN_DIR"
-rsync -a "$SRC_DIR/<files the job uses>" "$RUN_DIR/"                # SRC_DIR = the project source folder on home
+rsync -a "$SRC_DIR/scripts" "$RUN_DIR/"   # SRC_DIR = the HAMMER-sgs/ source folder on home
 cd "$RUN_DIR"
 ```
-After the job, copy the results to `/gpfs/projects/etur166/boga222803/<results folder>/$SLURM_JOB_ID/` so they are kept, then delete the run folder. A failed job keeps its run folder for debugging.
+After the job, copy the results to `/gpfs/projects/etur166/boga222803/hammer-sgs/results/$SLURM_JOB_ID/` so they are kept, then delete the run folder. A failed job keeps its run folder for debugging.
 
-TODO: how the code finds its weights/models (paths relative to the run folder, env vars, symlinks to `/gpfs/projects/...`).
-If the job symlinks to files on `/gpfs`, `/gpfs` must be visible inside the container (`--bind /gpfs`, see below).
+The code gets its models by absolute paths and env vars, all on `/gpfs/projects` (so `/gpfs` must be visible inside the container, `--bind /gpfs`, see below):
+- YOLO: `--model /gpfs/projects/etur166/boga222803/models/yolov8s-seg.pt`, with `YOLO_CONFIG_DIR` pointing into the run folder for Ultralytics' settings file.
+- BLIP and MiniLM: `HF_HOME=/gpfs/projects/etur166/boga222803/hf_cache`.
 
 ## Running the container
 MN5 has SingularityCE, not Apptainer. Load it in the job:
@@ -61,35 +76,43 @@ module load singularity/4.1.5
 ```
 `singularity exec --nv` works on compute nodes but fails on the login node (session directory permission error), so test containers inside a job.
 
-TODO: how this project's `.sif` is built and where it lives. The image is built locally (MN5 has no internet), e.g. converted from the GHCR image built by `.github/workflows/hammer-sgs-cbuild.yml`, then uploaded to `/gpfs/projects/etur166/boga222803/`.
+The image is `/gpfs/projects/etur166/boga222803/hammer-sgs.sif`. MN5 has no internet, so it is built locally with Apptainer 1.5.3 from the local Docker image `hammer-sgs:latest` (built from `HAMMER-sgs/Dockerfile`, the same Dockerfile CI pushes to `ghcr.io/kutayeroglu/hammer-sgs`), without downloading anything, then uploaded through the transfer node:
+```bash
+apptainer build ~/containers/hammer-sgs.sif docker-daemon://hammer-sgs:latest
+rsync -a --partial ~/containers/hammer-sgs.sif mn5_data_transfer1:/gpfs/projects/etur166/boga222803/hammer-sgs.sif
+```
+If the local Docker image is missing, `docker pull ghcr.io/kutayeroglu/hammer-sgs:latest` first (the ~3.7 GB torch layer is slow to pull on the home network), or rebuild it from the Dockerfile.
+Current image: torch 2.14.1+cu126, transformers 5.21.0, ultralytics 8.4.190 (Python 3.11).
 For small additions, prefer layering on top of an existing verified image (`Bootstrap: localimage`) over a full rebuild: a full rebuild re-resolves every unpinned package and could change results.
 
-Run the pipeline from the run folder, pointing the datasets at `$TMPDIR`:
+Run the pipeline from the run folder, offline, with the dataset in `$TMPDIR` (see `slurm_scripts/mn5/sgs.sh` for the full commands):
 ```bash
-singularity exec --nv --bind /gpfs \
-  --env <DATASET_VAR>="$TMPDIR/<dataset>" \
-  /gpfs/projects/etur166/boga222803/<image>.sif <command>   # TODO
+singularity exec --nv --bind /gpfs --bind "$TMPDIR" \
+  --env HF_HOME=/gpfs/projects/etur166/boga222803/hf_cache --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 \
+  --env YOLO_OFFLINE=1 --env YOLO_CONFIG_DIR="$RUN_DIR/.ultralytics" \
+  /gpfs/projects/etur166/boga222803/hammer-sgs.sif python scripts/make_fg_bg_crops_yolo.py ...
 ```
 
 ## GPU selection
 Don't hardcode GPU IDs. SLURM sets `CUDA_VISIBLE_DEVICES` for the job; use it.
 
 # Preparing SLURM scripts
-TODO: path of this project's MN5 SLURM script; start from it for new jobs.
-
-Recommended pattern: the script is submitted by running it (not with `sbatch`) from anywhere on a login node. It creates the scratch folders, then submits itself with `--chdir` on scratch and passes extra args to `sbatch`:
+The SLURM script for this project is `HAMMER-sgs/slurm_scripts/mn5/sgs.sh` (adapted from the bounhpc one, `slurm_scripts/bounhpc/sgs.sh`); start from it for new jobs.
+It is submitted by running it (not with `sbatch`) from anywhere on a login node. It creates the scratch folders, then submits itself with `--chdir` on scratch and passes extra args to `sbatch`:
 ```bash
-bash <path to script>                    # debug run (acc_debug)
-bash <path to script> --qos=acc_ehpc     # full run
+bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh                  # debug run (acc_debug)
+bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh --qos=acc_ehpc   # full run
+STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT: train | val | test
 ```
 `--chdir` must exist before the job starts, so it can't be created inside the job.
+Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFFLINE=1`, reading models from project storage.
 
-Logs: `/gpfs/scratch/etur166/boga222803/<project>/logs/<jobid>_<name>.{out,err}` (TODO).
-Results: `/gpfs/projects/etur166/boga222803/<results folder>/<jobid>/` (TODO).
+Logs: `/gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}`.
+Crops: `/gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/`, kept across jobs so `STAGE=semantic` can reuse them and a timed-out crops job can resume.
+Results: `/gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/semantic_blip_<split>.csv`.
 
 ## QoS
 - Debug and test jobs: `--qos=acc_debug`.
 - Full runs: `--qos=acc_ehpc`.
 
-TODO: an example MN5 SLURM script from another project to copy from (it lived at the root of the other repo as `mn5_example_slurm_script.sh`; it isn't in this repo).
-Reuse its `--account=etur166`, `$TMPDIR` staging and module loading. Don't copy the parts specific to that project, or a `--chdir=.`, which would run the job wherever it was submitted from.
+Don't use `--chdir=.` in new scripts: it would run the job wherever it was submitted from.
