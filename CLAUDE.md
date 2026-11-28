@@ -107,6 +107,7 @@ STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT
 Use `SPLIT=all` when comparing with the SGS paper. It merges train, val and test (in that order) into one JSON and one crops folder, and should report `OK:4632 Skipped:368` (368 ids are shared by two images; see `HAMMER-sgs/RESULTS.md`).
 
 Run results, the comparison with the paper, and findings about the dataset are in `HAMMER-sgs/RESULTS.md`. Add new runs there, not here.
+The planned degradation experiments (blur, noise and warp on FG, BG or both, with BLIP-base vs BLIP2 captioners) are described in `HAMMER-sgs/PLAN.md`. Follow it when implementing them, and update it when decisions change.
 
 `--chdir` must exist before the job starts, so it can't be created inside the job.
 Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFFLINE=1`, reading models from project storage.
