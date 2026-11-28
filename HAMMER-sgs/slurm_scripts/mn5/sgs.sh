@@ -25,6 +25,7 @@
 # Crops:   /gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/
 #          deleted and recreated whenever the crops stage runs; STAGE=semantic reuses them
 # Results: /gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/
+#          semantic_blip_<split>.csv and scores_<split>.txt (scripts/score_sgs.py, also printed in the log)
 # Logs:    /gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}
 
 set -e
@@ -154,6 +155,9 @@ if [ "$STAGE" = "semantic" ] || [ "$STAGE" = "all" ]; then
     )
     append_args SEMANTIC_CMD "${SEMANTIC_ARGS:-}"
     run python scripts/semantic_fg_bg_blip.py "${SEMANTIC_CMD[@]}"
+
+    echo "--- Scores (paper's Table 1 format) ---"
+    run python scripts/score_sgs.py "results/semantic_blip_${SPLIT}.csv" --out "results/scores_${SPLIT}.txt"
 
     # -- Keep results in project storage (scratch is purged) --
     mkdir -p "$OUT_DIR"

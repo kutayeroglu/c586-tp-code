@@ -118,6 +118,7 @@ Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFF
 Logs: `/gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}`.
 Crops: `/gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/`. The crops stage deletes and recreates this folder every time, so each run keeps the same image for each shared id (the first in the JSON); `STAGE=semantic` reuses the crops already there. Don't pass `--overwrite` in `CROPS_ARGS`: it would keep the last image of each shared id instead.
 Results: `/gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/semantic_blip_<split>.csv`.
+Each job scores the CSV with `HAMMER-sgs/scripts/score_sgs.py` in the paper's Table 1 format and saves it as `scores_<split>.txt` in the same folder (also printed in the `.out` log). The upstream repo has no scoring code; the script follows the paper's one-class definitions (every sample is inconsistent, so Acc = fraction labelled Mismatch and F1 = 2·Acc/(1+Acc)). `--threshold` recomputes the labels at another τ from the CSV's `sts01` column.
 
 ## QoS
 - Debug and test jobs: `--qos=acc_debug`.
