@@ -104,14 +104,10 @@ bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh
 bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh --qos=acc_ehpc   # full run
 STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT: train | val | test | all
 ```
-`SPLIT=all` is the setup to use when comparing with the SGS paper. Its "Extended DGM4" set is DGM4plus, and its N=4632 is the number of distinct ids among the 5000 samples: crops are named by id, 368 ids are shared by two different images, and the upstream crops script skips the second one. So `SPLIT=all` merges train, val and test (in that order) into one JSON and one crops folder and should report `OK:4632 Skipped:368`. Per-split runs give 4794 pairs instead, because some shared ids fall in different splits. The ids come from a counter in DGM4plus's generator (`src/Datasetgen.py` in `Gaganx0/DGM4plus`) that restarts at the record count after a resumed run, so it can reuse ids. Which image of each pair is kept depends on record order, which may differ from the authors' original `metadata.json`.
+Use `SPLIT=all` when comparing with the SGS paper. It merges train, val and test (in that order) into one JSON and one crops folder, and should report `OK:4632 Skipped:368` (368 ids are shared by two images; see `HAMMER-sgs/RESULTS.md`).
 
-Verified run: job 49469599 (2026-11-27), `SPLIT=all` on `acc_ehpc`, 37 minutes on 1 H100 (the semantic stage runs on CPU and takes most of it). It reproduces the paper's Table 1 (one-class setting: every sample is inconsistent, so Acc = fraction labelled Mismatch, at τ = 0.55):
+Run results, the comparison with the paper, and findings about the dataset are in `HAMMER-sgs/RESULTS.md`. Add new runs there, not here.
 
-| | N | s~FB mean±sd | median | % Mismatch | Acc / F1 |
-|---|---|---|---|---|---|
-| Paper (Table 1) | 4632 | 0.264±0.158 | 0.238 | 94.3 | 0.943 / 0.971 |
-| Job 49469599 | 4632 | 0.265±0.157 | 0.239 | 94.6 | 0.946 / 0.972 |
 `--chdir` must exist before the job starts, so it can't be created inside the job.
 Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFFLINE=1`, reading models from project storage.
 
