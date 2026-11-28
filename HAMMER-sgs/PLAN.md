@@ -1,6 +1,6 @@
 # Experiment plan: robustness of SGS to image degradations
 
-Status: plan, nothing implemented yet. Results go to `RESULTS.md` as they come in.
+Status: prerequisites in progress (see "Progress" at the end). Results go to `RESULTS.md` as they come in.
 
 ## Research question
 
@@ -37,11 +37,16 @@ The paper's one-class Table 1 numbers on DGM4plus alone are still reported, for 
 
 ### Negatives: DGM4 pristine subset
 - **Size:** 4632 samples, so the classes are balanced. Sampled with a fixed seed.
-- **Source:** DGM4 from the HAMMER release. Only the pristine (original) images and their metadata are needed, not the full dataset.
-  - To verify: the download location, and how pristine samples are labelled (`fake_cls`).
-- **Matching DGM4plus:**
-  - keep images with 1–3 faces, using `mtcnn_boxes` if DGM4's metadata has it (to verify), like DGM4plus's face rule;
-  - resize or center-crop to 400×256, the DGM4plus resolution.
+- **Source:** DGM4 on Hugging Face (`rshaojimmy/DGM4`, revision `9efd3f1`). Only `origin/*.zip` and `metadata/*.json` were downloaded. The raw pristine data is on MN5 as `datasets/dgm4_origin.tar` (see CLAUDE.md).
+- **What the metadata shows:**
+  - Pristine samples have `fake_cls == "orig"`. There are 77,426 distinct pristine images, matching the DGM4 paper.
+  - The train metadata lists 38,765 of them twice, with identical text, so deduplicate by image.
+  - `mtcnn_boxes` exists. Every pristine image has 2–5 faces, never 0 or 1, so DGM4plus's 1–3 face rule becomes 2–3 faces here (62,445 images).
+  - Sizes vary: most are 426×256, others 384×256 or larger (e.g. 976×549). DGM4plus is 400×256.
+- **Matching DGM4plus (proposal, to be decided):**
+  - keep images with 2–3 faces;
+  - face-aware crop to 400×256 like DGM4plus's generator: scale to cover 400×256, cut a window centered on the faces, and drop images where a face would fall outside it;
+  - sample 4632 with a fixed seed, in proportion to the four news sources.
 - **Storage:** one tar at `/gpfs/projects/etur166/boga222803/datasets/dgm4_pristine.tar`, with the same layout as `dgm4plus.tar`.
 - **Known confound:** DGM4plus images are synthetic (gpt-image-1) and DGM4 images are real news photos. Part of any score difference can come from synthetic vs real rather than from consistency. Report this as a limitation, and compare score distributions on clean data first.
 
@@ -97,7 +102,7 @@ The main setting applies them to the **crops, after segmentation**. This isolate
 - **Caption length:** the same `max_new_tokens` for every captioner, since length affects MiniLM similarity. The paper uses 16. Whether 16 cuts off BLIP2's answers is a pilot check.
 - **Similarity:** MiniLM (`all-MiniLM-L6-v2`) stays the same everywhere.
 - **Hardware:** BLIP2 runs on GPU in fp16. C0 also moves to GPU for speed (see "Checks").
-- **To fetch:** the BLIP2-FlanT5-XL weights. The local cache only has its `config.json`, so download locally and upload to `hf_cache` on MN5.
+- **Weights:** BLIP2-FlanT5-XL (revision `0eb0d3b`, safetensors only, 15 GB) is in `hf_cache` on MN5.
 
 ## Metrics
 
@@ -172,4 +177,16 @@ That's ≈ 18.5k captions. For 9 degradation × severity combinations plus clean
 - **`max_new_tokens`:** 16 for all (paper-faithful), or a larger shared value if 16 cuts off BLIP2.
 - **Final severities:** after the pilot.
 - **Image-level setting:** whether to include it, and at which severities.
-- **Negative-set filters:** faces vs YOLO persons, and resize vs crop to 400×256.
+- **Negative-set construction:** see the proposal under "Negatives: DGM4 pristine subset".
+
+## Progress
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Checksums of the replication crops | done (`results/49469599/crops_sha256.txt`) |
+| 2 | `--save_masks`, crops rerun on DGM4plus | done (job 49494928): crops byte-identical to the replication, so job 49469599 stays the clean baseline; masks in `crops/all/masks/` |
+| 3 | BLIP2-FlanT5-XL on MN5 | done |
+| 4 | DGM4 pristine subset | raw data on MN5 (`dgm4_origin.tar`); subset construction to be decided |
+| 5 | Container layer (spaCy, `en_core_web_sm`, `accelerate`) | not started |
+| 6–10 | New scripts and SLURM array | not started |
+| 11–12 | Pilot, full runs, write-up | not started |

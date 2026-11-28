@@ -36,21 +36,29 @@ Large files in `/gpfs/projects/etur166/boga222803`:
 ```
 ├── hammer-sgs.sif              # Apptainer image (see "Running the container")
 ├── datasets/dgm4plus.tar       # DGM4plus: train/ val/ test/, each <split>.json (test: test_public.json) + images/
+├── datasets/dgm4_origin.tar    # DGM4 pristine images + all metadata: DGM4/origin/<source>/<dir>/<n>.jpg, DGM4/metadata/{train,val,test}.json
+│                               #   (image paths in the metadata resolve when extracted to the same folder); 4.5 GB, sha256 fbc10129…bd8e
 ├── models/yolov8s-seg.pt       # YOLOv8-seg weights for the crops stage
 ├── hf_cache/hub/               # HF cache (HF_HOME): Salesforce/blip-image-captioning-base, sentence-transformers/all-MiniLM-L6-v2,
 │                               #   Salesforce/blip2-flan-t5-xl (revision 0eb0d3b, safetensors only)
-└── hammer-sgs/                 # job outputs: crops/<split>/, results/<jobid>/
+└── hammer-sgs/                 # job outputs: crops/<split>/ (with masks/ when made with --save_masks), results/<jobid>/
 ```
 They were staged locally and uploaded through the transfer node:
 ```bash
 tar -cf dgm4plus.tar -C ~/datasets/dgm4_plus train val test   # one file instead of ~5000 on GPFS
+# DGM4: public on Hugging Face (rshaojimmy/DGM4, revision 9efd3f1); only origin/*.zip and metadata/*.json are downloaded
+# (manipulation/*.zip isn't needed). The zips are unpacked and repacked as one tar under DGM4/, local copy in ~/datasets/dgm4:
+tar -cf dgm4_origin.tar DGM4   # DGM4/origin/... + DGM4/metadata/*.json
 mkdir -p hf_cache/hub && cp -a ~/.cache/huggingface/hub/models--Salesforce--blip-image-captioning-base \
     ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2 hf_cache/hub/   # relative symlinks survive
 # yolov8s-seg.pt: downloaded with ultralytics' attempt_download_asset('yolov8s-seg.pt') inside the image
 # Newer HF downloads (e.g. blip2-flan-t5-xl) keep large files in a shared store, hub/blobs/<xx>/<sha>, outside the
-# model folder; plain rsync -a/cp -a then copies dangling links. Upload such a model folder with --copy-unsafe-links:
-rsync -a --copy-unsafe-links --partial ~/.cache/huggingface/hub/models--Salesforce--blip2-flan-t5-xl \
-    mn5_data_transfer1:/gpfs/projects/etur166/boga222803/hf_cache/hub/
+# model folder; plain rsync -a/cp -a then copies dangling links. Upload such a model folder with --copy-unsafe-links
+# and a trailing slash on both paths, so the model folder is the transfer root and links leaving it count as unsafe
+# (without the slash the root is hub/, the shared store is inside it, and the links are copied as links):
+M=models--Salesforce--blip2-flan-t5-xl
+rsync -a --copy-unsafe-links --partial ~/.cache/huggingface/hub/$M/ \
+    mn5_data_transfer1:/gpfs/projects/etur166/boga222803/hf_cache/hub/$M/
 rsync -a --partial <file or folder> mn5_data_transfer1:/gpfs/projects/etur166/boga222803/<target>/
 ```
 Keep datasets as a single archive on GPFS (many small files are slow there) and extract them to `$TMPDIR` in the job.
@@ -119,6 +127,7 @@ Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFF
 
 Logs: `/gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}`.
 Crops: `/gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/`. The crops stage deletes and recreates this folder every time, so each run keeps the same image for each shared id (the first in the JSON); `STAGE=semantic` reuses the crops already there. Don't pass `--overwrite` in `CROPS_ARGS`: it would keep the last image of each shared id instead.
+Make crops (and masks, `CROPS_ARGS="--save_masks"`) on MN5 only: reruns on its H100s give byte-identical crops, while a laptop GPU gave different masks for most images (see `HAMMER-sgs/RESULTS.md`).
 Results: `/gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/semantic_blip_<split>.csv`.
 Each job scores the CSV with `HAMMER-sgs/scripts/score_sgs.py` in the paper's Table 1 format and saves it as `scores_<split>.txt` in the same folder (also printed in the `.out` log). The upstream repo has no scoring code; the script follows the paper's one-class definitions (every sample is inconsistent, so Acc = fraction labelled Mismatch and F1 = 2·Acc/(1+Acc)). `--threshold` recomputes the labels at another τ from the CSV's `sts01` column.
 

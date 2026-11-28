@@ -49,4 +49,10 @@ To match the paper, `SPLIT=all` merges the three splits into one JSON and one cr
 
 ## Other runs
 
+- Job 49494928 (2026-11-28): crops with masks, `STAGE=crops SPLIT=all CROPS_ARGS="--save_masks"`, on `acc_debug`, 1 min 52 s. It reported `OK:4632 Skipped:368`, wrote 4632 mask pairs to `crops/all/masks/`, and needed no center-square fallback.
+  - All 9264 crops are byte-identical to job 49469599's (checked against `results/49469599/crops_sha256.txt`). YOLO is reproducible on MN5's H100s, so job 49469599 remains the clean BLIP-base baseline for these crops.
+  - The same crops made on a laptop GPU (RTX 4060) differed in 6044 of 9264 files, so crops should always be made on MN5.
+  - Files in `results/49494928/`: `masks_sha256.txt` (one sha256 per file in `crops/all/masks/`, including its `meta.csv`) and a copy of `meta.csv` (per image: `n_persons`, `fallback`, `fg_area_frac`). Persons merged per image (1 / 2 / 3): 1033 / 1588 / 2011; the foreground covers 7–77% of the image (median 42%).
+  - The replication crops are also kept as `crops/all_49469599/` (identical, so this copy is no longer needed).
+
 - Job 49468337 (2026-11-27): debug run with `SPLIT=val` and `SEMANTIC_ARGS="--max_images 50"`, on `acc_debug`, 1 min 22 s. Crops: `OK:737 Skipped:13`. All 50 rows were labelled Mismatch, which is expected since every sample is inconsistent.
