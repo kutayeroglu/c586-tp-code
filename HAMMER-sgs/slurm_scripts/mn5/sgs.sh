@@ -21,8 +21,9 @@
 # (train, val, test order) into one JSON and one crops folder. Crops are named by id, and 368 ids are
 # shared by two images, so the second image of each is skipped as upstream does: 5000 - 368 = 4632.
 #   SEMANTIC_ARGS="--max_images 200" bash .../sgs.sh   # quick smoke test
-#   CROPS_ARGS="--overwrite" bash .../sgs.sh           # extra options for make_fg_bg_crops_yolo.py
-# Crops:   /gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/ (kept across jobs)
+#   CROPS_ARGS="--conf 0.3" bash .../sgs.sh            # extra options for make_fg_bg_crops_yolo.py
+# Crops:   /gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/
+#          deleted and recreated whenever the crops stage runs; STAGE=semantic reuses them
 # Results: /gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/
 # Logs:    /gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}
 
@@ -125,7 +126,12 @@ append_args() {
 
 if [ "$STAGE" = "crops" ] || [ "$STAGE" = "all" ]; then
     echo "--- Stage 1: FG/BG crops (YOLOv8-seg) ---"
-    # Existing crops are skipped unless --overwrite is passed, so a timed-out job can be resubmitted
+    # Always start from an empty crops folder, so every run keeps the same image for each shared id
+    # (the first one in the JSON; the script skips ids whose crops exist). Without this, crops left by
+    # an earlier run would be reused, and --overwrite would keep the last image of each shared id instead.
+    # Crops take ~2 minutes for all 5000 images, so resuming a timed-out crops job isn't needed.
+    rm -rf "${CROPS_DIR:?}"
+    mkdir -p "$CROPS_DIR"
     CROPS_CMD=(
         --data "$DATA_JSON"
         --img_root "$IMG_ROOT"

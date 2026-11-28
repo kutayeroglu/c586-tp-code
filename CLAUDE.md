@@ -105,11 +105,18 @@ bash /gpfs/home/boga/boga222803/c586-tp-code/HAMMER-sgs/slurm_scripts/mn5/sgs.sh
 STAGE=crops SPLIT=train bash .../sgs.sh   # STAGE: crops | semantic | all; SPLIT: train | val | test | all
 ```
 `SPLIT=all` is the setup to use when comparing with the SGS paper. Its "Extended DGM4" set is DGM4plus, and its N=4632 is the number of distinct ids among the 5000 samples: crops are named by id, 368 ids are shared by two different images, and the upstream crops script skips the second one. So `SPLIT=all` merges train, val and test (in that order) into one JSON and one crops folder and should report `OK:4632 Skipped:368`. Per-split runs give 4794 pairs instead, because some shared ids fall in different splits. The ids come from a counter in DGM4plus's generator (`src/Datasetgen.py` in `Gaganx0/DGM4plus`) that restarts at the record count after a resumed run, so it can reuse ids. Which image of each pair is kept depends on record order, which may differ from the authors' original `metadata.json`.
+
+Verified run: job 49469599 (2026-11-27), `SPLIT=all` on `acc_ehpc`, 37 minutes on 1 H100 (the semantic stage runs on CPU and takes most of it). It reproduces the paper's Table 1 (one-class setting: every sample is inconsistent, so Acc = fraction labelled Mismatch, at τ = 0.55):
+
+| | N | s~FB mean±sd | median | % Mismatch | Acc / F1 |
+|---|---|---|---|---|---|
+| Paper (Table 1) | 4632 | 0.264±0.158 | 0.238 | 94.3 | 0.943 / 0.971 |
+| Job 49469599 | 4632 | 0.265±0.157 | 0.239 | 94.6 | 0.946 / 0.972 |
 `--chdir` must exist before the job starts, so it can't be created inside the job.
 Compute nodes are offline, so the job runs with `HF_HUB_OFFLINE=1` and `YOLO_OFFLINE=1`, reading models from project storage.
 
 Logs: `/gpfs/scratch/etur166/boga222803/hammer-sgs/logs/<jobid>_hammer-sgs.{out,err}`.
-Crops: `/gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/`, kept across jobs so `STAGE=semantic` can reuse them and a timed-out crops job can resume.
+Crops: `/gpfs/projects/etur166/boga222803/hammer-sgs/crops/<split>/{fg,bg}/`. The crops stage deletes and recreates this folder every time, so each run keeps the same image for each shared id (the first in the JSON); `STAGE=semantic` reuses the crops already there. Don't pass `--overwrite` in `CROPS_ARGS`: it would keep the last image of each shared id instead.
 Results: `/gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid>/semantic_blip_<split>.csv`.
 
 ## QoS
