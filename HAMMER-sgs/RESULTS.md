@@ -6,7 +6,7 @@ Output files are in `/gpfs/projects/etur166/boga222803/hammer-sgs/results/<jobid
 ## Replication of the SGS paper's Table 1
 
 Job 49469599 (2026-11-27): `SPLIT=all`, `STAGE=all`, `--qos=acc_ehpc`. It took 37 minutes on 1 H100; most of that is the semantic stage, which runs on CPU.
-Files: `semantic_blip_all.csv`, `scores_all.txt`.
+Files: `semantic_blip_all.csv`, `scores_all.txt`, and `crops_sha256.txt` (one sha256 per crop in `crops/all/{fg,bg}`, recorded 2026-11-28 before any rerun). To check later crops against it: `cd /gpfs/projects/etur166/boga222803/hammer-sgs/crops/all && sha256sum -c --quiet ../../results/49469599/crops_sha256.txt`.
 
 The evaluation is one-class: every sample is FG–BG inconsistent. So Acc is the fraction labelled Mismatch at τ = 0.55, and F1 = 2·Acc/(1+Acc).
 

@@ -37,7 +37,8 @@ Large files in `/gpfs/projects/etur166/boga222803`:
 ├── hammer-sgs.sif              # Apptainer image (see "Running the container")
 ├── datasets/dgm4plus.tar       # DGM4plus: train/ val/ test/, each <split>.json (test: test_public.json) + images/
 ├── models/yolov8s-seg.pt       # YOLOv8-seg weights for the crops stage
-├── hf_cache/hub/               # HF cache (HF_HOME): Salesforce/blip-image-captioning-base, sentence-transformers/all-MiniLM-L6-v2
+├── hf_cache/hub/               # HF cache (HF_HOME): Salesforce/blip-image-captioning-base, sentence-transformers/all-MiniLM-L6-v2,
+│                               #   Salesforce/blip2-flan-t5-xl (revision 0eb0d3b, safetensors only)
 └── hammer-sgs/                 # job outputs: crops/<split>/, results/<jobid>/
 ```
 They were staged locally and uploaded through the transfer node:
@@ -46,6 +47,10 @@ tar -cf dgm4plus.tar -C ~/datasets/dgm4_plus train val test   # one file instead
 mkdir -p hf_cache/hub && cp -a ~/.cache/huggingface/hub/models--Salesforce--blip-image-captioning-base \
     ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2 hf_cache/hub/   # relative symlinks survive
 # yolov8s-seg.pt: downloaded with ultralytics' attempt_download_asset('yolov8s-seg.pt') inside the image
+# Newer HF downloads (e.g. blip2-flan-t5-xl) keep large files in a shared store, hub/blobs/<xx>/<sha>, outside the
+# model folder; plain rsync -a/cp -a then copies dangling links. Upload such a model folder with --copy-unsafe-links:
+rsync -a --copy-unsafe-links --partial ~/.cache/huggingface/hub/models--Salesforce--blip2-flan-t5-xl \
+    mn5_data_transfer1:/gpfs/projects/etur166/boga222803/hf_cache/hub/
 rsync -a --partial <file or folder> mn5_data_transfer1:/gpfs/projects/etur166/boga222803/<target>/
 ```
 Keep datasets as a single archive on GPFS (many small files are slow there) and extract them to `$TMPDIR` in the job.
